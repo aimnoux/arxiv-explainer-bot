@@ -174,7 +174,7 @@ def _draw(
 ) -> None:
     _clear()
     print(f"{BOLD}╔══════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}║     ArXiV Explainer Bot — CLI       ║{RESET}")
+    print(f"{BOLD}║     arXiv Explainer Bot — CLI       ║{RESET}")
     print(f"{BOLD}╚══════════════════════════════════════╝{RESET}")
     print()
 
@@ -193,10 +193,6 @@ def _draw(
     print()
     print(f"  {BOLD}[0]{RESET} Выход")
     print()
-
-    if last_action:
-        print(f"  {CYAN}»  {last_action}{RESET}")
-        print()
 
     if last_action:
         print(f"  {CYAN}»  {last_action}{RESET}")

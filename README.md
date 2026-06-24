@@ -1,4 +1,4 @@
-# 📄 ArXiV Explainer Bot
+# 📄 arXiv Explainer Bot
 
 > Телеграм-бот, который принимает ссылку на научную статью с arxiv.org и возвращает структурированный разбор — на русском или английском — через LLM-провайдер на ваш выбор. Разворачивается на Ubuntu VPS за один скрипт.
 
@@ -50,7 +50,7 @@
 ## Быстрый старт на VPS (Ubuntu 22.04+)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/arxiv-explainer-bot
+git clone https://github.com/aimnoux/arxiv-explainer-bot.git
 cd arxiv-explainer-bot
 chmod +x setup.sh
 sudo ./setup.sh
@@ -78,7 +78,7 @@ arxiv-bot
 
 ```
 ╔══════════════════════════════════════╗
-║     ArXiV Explainer Bot — CLI       ║
+║     arXiv Explainer Bot — CLI       ║
 ╚══════════════════════════════════════╝
 
   Статус бота: ● работает
@@ -136,7 +136,7 @@ arxiv-bot
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/YOUR_USERNAME/arxiv-explainer-bot
+git clone https://github.com/aimnoux/arxiv-explainer-bot.git
 cd arxiv-explainer-bot
 
 # Создать виртуальное окружение
@@ -210,10 +210,8 @@ https://arxiv.org/pdf/2406.12345v2
 
 | Команда | Доступ | Описание |
 |---------|--------|----------|
-| `/start` | все | Приветствие и инструкция |
-| `/help` | все | Справка |
-| `/status` | все | Текущий провайдер и модель |
-| `/myid` | все | Показать свой Telegram ID |
+| `/start` | все | Приветствие + ссылка на репозиторий |
+| `/help` | все | Подробная инструкция по использованию |
 | `/admin` | владелец | Открыть панель управления |
 
 ---

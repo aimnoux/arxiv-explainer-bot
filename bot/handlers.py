@@ -13,18 +13,36 @@ from .llm_client import get_llm_client
 ARXIV_URL_RE = re.compile(r"arxiv\.org/(abs|pdf)/[\d.]+v?\d*")
 ARXIV_ID_RE = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
 
+REPO_LINK = "[🔗 GitHub](https://github.com/aimnoux/arxiv-explainer-bot)"
+
 WELCOME_USER = (
-    "👋 Привет\\! Я анализирую научные статьи с *arxiv\\.org*\\.\n\n"
-    "Просто пришли мне ссылку:\n"
+    "👋 Привет\\! Я анализирую научные статьи с *arXiv*\\.\n\n"
+    "Пришли ссылку — получишь структурированный разбор:\n"
     "`https://arxiv.org/abs/2406.12345`\n\n"
-    "Или просто ID статьи:\n"
-    "`2406.12345`"
+    f"{REPO_LINK}"
 )
 
 WELCOME_ADMIN = (
-    "👋 Привет\\! Я анализирую научные статьи с *arxiv\\.org*\\.\n\n"
+    "👋 Привет\\! Я анализирую научные статьи с *arXiv*\\.\n\n"
     "Пришли ссылку — получишь разбор статьи\\.\n\n"
+    f"{REPO_LINK}\n\n"
     "Для настройки бота: /admin"
+)
+
+HELP_TEXT = (
+    "📖 *Как пользоваться ботом*\n\n"
+    "Отправь ссылку на статью с *arXiv* в любом формате:\n"
+    "• `https://arxiv.org/abs/2406.12345`\n"
+    "• `https://arxiv.org/pdf/2406.12345`\n"
+    "• `2406.12345` — просто ID статьи\n\n"
+    "*Бот вернёт структурированный разбор:*\n"
+    "💡 *TL;DR* — суть за 1–2 предложения\n"
+    "🎯 *Проблема* — что решает работа\n"
+    "🔬 *Метод* — ключевые технические идеи\n"
+    "📊 *Результаты* — главные цифры и выводы\n"
+    "⚠️ *Ограничения* — слабые стороны\n"
+    "🌍 *Почему это важно* — значение для области\n"
+    "🏷️ *Ключевые слова*"
 )
 
 
@@ -39,7 +57,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             f"👑 Вы установлены как администратор бота\\.\n"
             f"Ваш Telegram ID: `{user.id}`\n\n"
-            "Для настройки: /admin",
+            f"Для настройки: /admin\n\n"
+            f"{REPO_LINK}",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -51,33 +70,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = HELP_TEXT
     if admin_module.is_admin(update):
-        await update.message.reply_text(WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN_V2)
-    else:
-        await update.message.reply_text(WELCOME_USER, parse_mode=ParseMode.MARKDOWN_V2)
-
-
-async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        cfg = load_config()
-    except FileNotFoundError:
-        await update.message.reply_text(
-            "❌ Конфиг не найден\\. Запустите `python3 -m bot.wizard`",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
-
-    provider_key = cfg.get("llm_provider", "?")
-    provider_name = PROVIDERS.get(provider_key, {}).get("name", provider_key)
-    model = cfg.get("llm_model", "?")
-    lang = cfg.get("language", "ru")
-
-    text = (
-        f"⚙️ *Текущий конфиг*\n\n"
-        f"Провайдер: `{escape_md(provider_name)}`\n"
-        f"Модель: `{escape_md(model)}`\n"
-        f"Язык: `{escape_md(lang)}`"
-    )
+        text += "\n\n⚙️ Настройка провайдера и модели: /admin"
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
 
 

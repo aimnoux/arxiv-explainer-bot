@@ -199,13 +199,6 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
 
 
-async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        f"🪪 Ваш Telegram ID: <code>{update.effective_user.id}</code>",
-        parse_mode=ParseMode.HTML,
-    )
-
-
 # ── Callback router ───────────────────────────────────────────────────────────
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
