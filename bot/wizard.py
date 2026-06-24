@@ -231,10 +231,10 @@ def _fetch_openai_compat(provider_key: str, base_url: str, api_key: str) -> list
 
 
 def fetch_openrouter_key_info(api_key: str) -> dict | None:
-    """Fetch /auth/key from OpenRouter. Returns None on any error."""
+    """Fetch /api/v1/key from OpenRouter. Returns None on any error."""
     try:
         return _http_get(
-            "https://openrouter.ai/api/v1/auth/key",
+            "https://openrouter.ai/api/v1/key",
             {"Authorization": f"Bearer {api_key}"},
         ).get("data")
     except Exception:
@@ -245,26 +245,34 @@ def print_openrouter_balance(api_key: str) -> None:
     info = fetch_openrouter_key_info(api_key)
     if not info:
         return
-    usage = info.get("usage", 0)
-    limit = info.get("limit")
-    is_free = info.get("is_free_tier", False)
-    rate = info.get("rate_limit", {})
 
-    print("  ┌─ Аккаунт OpenRouter ───────────────────")
-    if is_free:
-        print("  │  Тариф:       бесплатный")
+    is_free        = info.get("is_free_tier", False)
+    usage          = info.get("usage", 0) or 0
+    usage_daily    = info.get("usage_daily", 0) or 0
+    usage_monthly  = info.get("usage_monthly", 0) or 0
+    limit          = info.get("limit")           # None = без лимита
+    limit_remaining = info.get("limit_remaining") # None = без лимита
+    limit_reset    = info.get("limit_reset")     # "daily"/"monthly"/None
+
+    print("  ┌─ Аккаунт OpenRouter ───────────────────────")
+    tier = "бесплатный (credits не пополнялись)" if is_free else "платный"
+    print(f"  │  Тариф:          {tier}")
+    print(f"  │  Потрачено всего: ${usage:.4f}")
+    print(f"  │  Сегодня:         ${usage_daily:.4f}")
+    print(f"  │  В этом месяце:   ${usage_monthly:.4f}")
     if limit is not None:
-        remaining = max(0.0, limit - usage)
-        print(f"  │  Потрачено:   ${usage:.4f}  /  лимит ${limit:.2f}")
-        print(f"  │  Остаток:     ${remaining:.4f}")
+        reset_str = f"сбрасывается {limit_reset}" if limit_reset else ""
+        remaining_str = f"${limit_remaining:.4f}" if limit_remaining is not None else "неизвестно"
+        print(f"  │  Лимит ключа:     ${limit:.2f}  {reset_str}")
+        print(f"  │  Остаток:         {remaining_str}")
     else:
-        print(f"  │  Потрачено:   ${usage:.4f}  (лимит не задан)")
-    if rate:
-        req = rate.get("requests")
-        interval = rate.get("interval", "")
-        limit_str = "без ограничений" if req == -1 else f"{req} запросов / {interval}"
-        print(f"  │  Rate limit:  {limit_str}")
-    print("  └────────────────────────────────────────")
+        print("  │  Лимит ключа:     не задан")
+    if is_free:
+        print("  │")
+        print("  │  ℹ  Бесплатные модели: ~20 req/min,")
+        print("  │     дневной лимит запросов ограничен.")
+        print("  │     Пополните баланс → лимит вырастет.")
+    print("  └─────────────────────────────────────────────")
 
 
 def fetch_models(provider_key: str, provider_cfg: dict, api_key: str) -> list[dict]:
