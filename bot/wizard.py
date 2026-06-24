@@ -260,7 +260,10 @@ def print_openrouter_balance(api_key: str) -> None:
     else:
         print(f"  │  Потрачено:   ${usage:.4f}  (лимит не задан)")
     if rate:
-        print(f"  │  Rate limit:  {rate.get('requests')} запросов / {rate.get('interval')}")
+        req = rate.get("requests")
+        interval = rate.get("interval", "")
+        limit_str = "без ограничений" if req == -1 else f"{req} запросов / {interval}"
+        print(f"  │  Rate limit:  {limit_str}")
     print("  └────────────────────────────────────────")
 
 
