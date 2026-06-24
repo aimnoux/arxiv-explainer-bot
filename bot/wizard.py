@@ -40,10 +40,11 @@ PROVIDERS = {
         "base_url": "https://openrouter.ai/api/v1",
         "docs": "https://openrouter.ai/keys",
         "models": [
-            {"id": "google/gemini-2.0-flash-exp:free",       "name": "Gemini 2.0 Flash (free)", "free": True, "default": True},
-            {"id": "meta-llama/llama-3.3-70b-instruct:free", "name": "Llama 3.3 70B (free)",    "free": True},
-            {"id": "anthropic/claude-3.5-haiku",              "name": "Claude 3.5 Haiku",        "free": False},
-            {"id": "openai/gpt-4o-mini",                      "name": "GPT-4o Mini",             "free": False},
+            {"id": "google/gemini-2.0-flash-001:free",          "name": "Gemini 2.0 Flash (free)", "free": True, "default": True},
+            {"id": "meta-llama/llama-3.3-70b-instruct:free",  "name": "Llama 3.3 70B (free)",   "free": True},
+            {"id": "deepseek/deepseek-r1-0528:free",           "name": "DeepSeek R1 (free)",     "free": True},
+            {"id": "anthropic/claude-3.5-haiku",               "name": "Claude 3.5 Haiku",       "free": False},
+            {"id": "openai/gpt-4o-mini",                       "name": "GPT-4o Mini",            "free": False},
         ],
     },
     "anthropic": {
