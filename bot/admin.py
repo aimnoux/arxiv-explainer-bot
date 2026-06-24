@@ -8,10 +8,13 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from .config import PROVIDERS, load_config, save_config
-from .model_fetcher import fetch_models
+from .model_fetcher import fetch_models as _fetch_models
 
 WORKDIR = Path(__file__).parent.parent
-MODELS_PAGE_SIZE = 8
+PAGE = 8
+
+# Module-level cache so pagination survives context.user_data resets
+_models_cache: dict[int, list[dict]] = {}
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -23,7 +26,7 @@ def is_admin(update: Update) -> bool:
         return False
 
 
-# ── Keyboard builders ─────────────────────────────────────────────────────────
+# ── Keyboard helpers ──────────────────────────────────────────────────────────
 
 def _kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -32,16 +35,24 @@ def _kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
     ])
 
 
+def _back(dest: str = "adm:menu", label: str = "⬅️ Назад") -> list[tuple[str, str]]:
+    return [(label, dest)]
+
+
+# ── Keyboards ─────────────────────────────────────────────────────────────────
+
 def main_menu_kb() -> InlineKeyboardMarkup:
     return _kb([
         [("⚙️ Провайдер / Модель", "adm:provider")],
-        [("🔑 API-ключ", "adm:key"), ("🌍 Язык", "adm:lang")],
+        [("🔑 API-ключ", "adm:key_only"), ("🌍 Язык", "adm:lang")],
         [("📊 Статус", "adm:status"), ("📋 Логи", "adm:logs")],
         [("🔄 Обновления", "adm:updates"), ("♻️ Перезапуск", "adm:restart")],
     ])
 
 
 def provider_kb() -> InlineKeyboardMarkup:
+    cfg = load_config()
+    current = cfg.get("llm_provider", "")
     rows = []
     keys = list(PROVIDERS.keys())
     for i in range(0, len(keys), 2):
@@ -49,47 +60,85 @@ def provider_kb() -> InlineKeyboardMarkup:
         for key in keys[i:i + 2]:
             p = PROVIDERS[key]
             badge = "✅" if p["free"] else "💰"
-            row.append((f"{badge} {p['name']}", f"adm:prov:{key}"))
+            mark = " ✓" if key == current else ""
+            row.append((f"{badge} {p['name']}{mark}", f"adm:prov:{key}"))
         rows.append(row)
-    rows.append([("⬅️ Назад", "adm:menu")])
+    if current:
+        pname = PROVIDERS.get(current, {}).get("name", current)
+        rows.append([(f"↩️ Оставить: {pname}", "adm:prov:keep")])
+    rows.append(_back())
     return _kb(rows)
 
 
-def model_kb(models: list[dict], page: int = 0) -> InlineKeyboardMarkup:
+def key_entry_kb() -> InlineKeyboardMarkup:
+    return _kb([
+        [("✅ Использовать текущий ключ", "adm:key:keep")],
+        [("⬅️ К выбору провайдера", "adm:provider")],
+    ])
+
+
+def model_kb(models: list[dict], page: int, current_model: str = "") -> InlineKeyboardMarkup:
     free = [m for m in models if m["free"]]
     paid = [m for m in models if not m["free"]]
     flat = free + paid
 
-    start = page * MODELS_PAGE_SIZE
-    end = min(start + MODELS_PAGE_SIZE, len(flat))
+    start = page * PAGE
+    end = min(start + PAGE, len(flat))
 
     rows = []
     for m in flat[start:end]:
         badge = "✅" if m["free"] else "💰"
-        label = f"{badge} {m['name'][:38]}"
+        mark = " ✓" if m["id"] == current_model else ""
+        label = f"{badge} {m['name'][:35]}{mark}"
         rows.append([(label, f"adm:model:{m['id']}")])
 
     nav = []
     if page > 0:
         nav.append(("◀️", f"adm:mpage:{page - 1}"))
     if end < len(flat):
-        nav.append((f"▶️ ({end}/{len(flat)})", f"adm:mpage:{page + 1}"))
+        nav.append((f"▶️ {end}/{len(flat)}", f"adm:mpage:{page + 1}"))
     if nav:
         rows.append(nav)
 
-    rows.append([("❌ Отмена", "adm:menu")])
+    if current_model:
+        short = current_model.split("/")[-1][:32]
+        rows.append([(f"↩️ Оставить: {short}", "adm:model:keep")])
+    rows.append([
+        ("⬅️ К ключу", "adm:back_to_key"),
+        ("✖️ Отмена", "adm:menu"),
+    ])
     return _kb(rows)
 
 
 def lang_kb() -> InlineKeyboardMarkup:
+    current = load_config().get("language", "ru")
     return _kb([
-        [("🇷🇺 Русский", "adm:setlang:ru"), ("🇬🇧 English", "adm:setlang:en")],
-        [("⬅️ Назад", "adm:menu")],
+        [
+            (f"🇷🇺 Русский{'  ✓' if current == 'ru' else ''}", "adm:setlang:ru"),
+            (f"🇬🇧 English{'  ✓' if current == 'en' else ''}", "adm:setlang:en"),
+        ],
+        [(f"↩️ Оставить текущий", "adm:menu")],
+        _back(),
     ])
 
 
-def back_kb() -> InlineKeyboardMarkup:
-    return _kb([[("⬅️ Назад", "adm:menu")]])
+def back_kb(dest: str = "adm:menu") -> InlineKeyboardMarkup:
+    return _kb([_back(dest)])
+
+
+# ── State helpers ─────────────────────────────────────────────────────────────
+
+def _uid(update: Update) -> int:
+    return update.effective_user.id
+
+
+def _save_models(uid: int, models: list[dict], ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    _models_cache[uid] = models
+    ctx.user_data["models"] = models
+
+
+def _load_models(uid: int, ctx: ContextTypes.DEFAULT_TYPE) -> list[dict]:
+    return ctx.user_data.get("models") or _models_cache.get(uid, [])
 
 
 # ── Menu text ─────────────────────────────────────────────────────────────────
@@ -108,32 +157,48 @@ def menu_text() -> str:
     )
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# ── Shared actions ────────────────────────────────────────────────────────────
+
+async def _to_menu(q, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx.user_data.clear()
+    await q.edit_message_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
+
+
+async def _do_fetch_models(q, uid: int, pkey: str, api_key: str, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    pcfg = PROVIDERS.get(pkey, {})
+    try:
+        models = await _fetch_models(pkey, pcfg.get("base_url"), api_key)
+        _save_models(uid, models, ctx)
+        cfg = load_config()
+        free_n = sum(1 for m in models if m["free"])
+        await q.edit_message_text(
+            f"Загружено {len(models)} моделей  (✅ {free_n} бесплатных)\n\nВыберите модель:",
+            reply_markup=model_kb(models, 0, cfg.get("llm_model", "")),
+        )
+    except Exception as e:
+        await q.edit_message_text(
+            f"❌ Не удалось загрузить модели: <code>{e}</code>",
+            reply_markup=_kb([
+                [("🔄 Попробовать снова", "adm:key:keep")],
+                [("⬅️ К выбору провайдера", "adm:provider")],
+            ]),
+            parse_mode=ParseMode.HTML,
+        )
+
+
+# ── Entry points ──────────────────────────────────────────────────────────────
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update):
-        uid = update.effective_user.id
-        try:
-            stored = load_config().get("admin_user_id", "не задан")
-        except Exception:
-            stored = "ошибка загрузки конфига"
-        await update.message.reply_text(
-            f"⛔ Нет доступа.\n\n"
-            f"Ваш Telegram ID: <code>{uid}</code>\n"
-            f"ID администратора в конфиге: <code>{stored}</code>\n\n"
-            f"Если это вы, обновите конфиг:\n"
-            f"<code>python3 -m bot.wizard</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text("⛔ Нет доступа.")
         return
     context.user_data.clear()
     await update.message.reply_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
 
 
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
     await update.message.reply_text(
-        f"🪪 Ваш Telegram ID: <code>{uid}</code>",
+        f"🪪 Ваш Telegram ID: <code>{update.effective_user.id}</code>",
         parse_mode=ParseMode.HTML,
     )
 
@@ -142,54 +207,112 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update):
+        await update.callback_query.answer("⛔ Нет доступа.")
         return
 
     q = update.callback_query
     await q.answer()
     data: str = q.data
+    uid = _uid(update)
+    cfg = load_config()
 
-    # ── Back to menu ──────────────────────────────────────────────────────────
+    # ── Menu ──────────────────────────────────────────────────────────────────
     if data == "adm:menu":
-        context.user_data.clear()
-        await q.edit_message_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
+        await _to_menu(q, context)
 
-    # ── Provider selection ────────────────────────────────────────────────────
+    # ── Provider ──────────────────────────────────────────────────────────────
     elif data == "adm:provider":
+        for k in ("temp_provider", "temp_key", "models", "awaiting"):
+            context.user_data.pop(k, None)
         await q.edit_message_text("Выберите провайдера LLM:", reply_markup=provider_kb())
 
-    elif data.startswith("adm:prov:"):
-        pkey = data[len("adm:prov:"):]
-        pcfg = PROVIDERS[pkey]
-        context.user_data["awaiting"] = "key"
+    elif data == "adm:prov:keep":
+        pkey = cfg.get("llm_provider", "")
         context.user_data["temp_provider"] = pkey
+        context.user_data["awaiting"] = "key"
+        pname = PROVIDERS.get(pkey, {}).get("name", pkey)
         await q.edit_message_text(
-            f"Провайдер: <b>{pcfg['name']}</b>\n\n"
-            f"Получить ключ: {pcfg['docs']}\n\n"
-            "Введите API-ключ (сообщение удалится автоматически):",
+            f"Провайдер: <b>{pname}</b>\n\nВведите новый ключ или используйте текущий:",
+            reply_markup=key_entry_kb(),
             parse_mode=ParseMode.HTML,
         )
 
-    # ── Key only (keep provider) ──────────────────────────────────────────────
-    elif data == "adm:key":
+    elif data.startswith("adm:prov:"):
+        pkey = data[len("adm:prov:"):]
+        pcfg = PROVIDERS.get(pkey, {})
+        context.user_data["temp_provider"] = pkey
+        context.user_data["awaiting"] = "key"
+        await q.edit_message_text(
+            f"Провайдер: <b>{pcfg.get('name', pkey)}</b>\n\n"
+            f"Получить ключ: {pcfg.get('docs', '')}\n\n"
+            "Введите API-ключ или используйте текущий:",
+            reply_markup=key_entry_kb(),
+            parse_mode=ParseMode.HTML,
+        )
+
+    # ── Key use current ───────────────────────────────────────────────────────
+    elif data == "adm:key:keep":
+        pkey = context.user_data.get("temp_provider", cfg.get("llm_provider", ""))
+        api_key = context.user_data.get("temp_key") or cfg.get("llm_api_key", "")
+        context.user_data["temp_provider"] = pkey
+        context.user_data["temp_key"] = api_key
+        context.user_data.pop("awaiting", None)
+        await q.edit_message_text("⏳ Загружаю модели...")
+        await _do_fetch_models(q, uid, pkey, api_key, context)
+
+    # ── Back to key entry from model list ─────────────────────────────────────
+    elif data == "adm:back_to_key":
+        pkey = context.user_data.get("temp_provider", cfg.get("llm_provider", ""))
+        context.user_data["awaiting"] = "key"
+        context.user_data.pop("models", None)
+        pname = PROVIDERS.get(pkey, {}).get("name", pkey)
+        await q.edit_message_text(
+            f"Провайдер: <b>{pname}</b>\n\nВведите API-ключ или используйте текущий:",
+            reply_markup=key_entry_kb(),
+            parse_mode=ParseMode.HTML,
+        )
+
+    # ── Key only change ───────────────────────────────────────────────────────
+    elif data == "adm:key_only":
         context.user_data["awaiting"] = "key_only"
-        cfg = load_config()
         pname = PROVIDERS.get(cfg.get("llm_provider", ""), {}).get("name", "?")
         await q.edit_message_text(
             f"Текущий провайдер: <b>{pname}</b>\n\n"
             "Введите новый API-ключ (сообщение удалится автоматически):",
+            reply_markup=back_kb(),
             parse_mode=ParseMode.HTML,
         )
 
-    # ── Model page navigation ─────────────────────────────────────────────────
+    # ── Model pagination ──────────────────────────────────────────────────────
     elif data.startswith("adm:mpage:"):
         page = int(data[len("adm:mpage:"):])
-        models = context.user_data.get("models", [])
-        await q.edit_message_text("Выберите модель:", reply_markup=model_kb(models, page))
+        models = _load_models(uid, context)
+        if not models:
+            await q.edit_message_text(
+                "⚠️ Список моделей устарел. Загрузите заново.",
+                reply_markup=back_kb("adm:provider"),
+            )
+            return
+        await q.edit_message_text(
+            f"Выберите модель (стр. {page + 1}):",
+            reply_markup=model_kb(models, page, cfg.get("llm_model", "")),
+        )
+
+    # ── Model keep current ────────────────────────────────────────────────────
+    elif data == "adm:model:keep":
+        if "temp_provider" in context.user_data:
+            cfg["llm_provider"] = context.user_data["temp_provider"]
+        if "temp_key" in context.user_data:
+            cfg["llm_api_key"] = context.user_data["temp_key"]
+        save_config(cfg)
+        context.user_data.clear()
+        await q.edit_message_text("✅ Провайдер/ключ сохранены, модель не изменена.")
+        await asyncio.sleep(1.5)
+        await q.edit_message_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
 
     # ── Model selected ────────────────────────────────────────────────────────
     elif data.startswith("adm:model:"):
         model_id = data[len("adm:model:"):]
-        cfg = load_config()
         if "temp_provider" in context.user_data:
             cfg["llm_provider"] = context.user_data["temp_provider"]
         if "temp_key" in context.user_data:
@@ -197,10 +320,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         cfg["llm_model"] = model_id
         save_config(cfg)
         context.user_data.clear()
-        await q.edit_message_text(
-            f"✅ Сохранено: <code>{model_id}</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await q.edit_message_text(f"✅ Сохранено:\n<code>{model_id}</code>", parse_mode=ParseMode.HTML)
         await asyncio.sleep(1.5)
         await q.edit_message_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
 
@@ -210,7 +330,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     elif data.startswith("adm:setlang:"):
         lang = data[len("adm:setlang:"):]
-        cfg = load_config()
         cfg["language"] = lang
         save_config(cfg)
         label = "Русский 🇷🇺" if lang == "ru" else "English 🇬🇧"
@@ -220,7 +339,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # ── Status ────────────────────────────────────────────────────────────────
     elif data == "adm:status":
-        cfg = load_config()
         pkey = cfg.get("llm_provider", "?")
         pname = PROVIDERS.get(pkey, {}).get("name", pkey)
         text = (
@@ -246,11 +364,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text("🔄 Проверяю обновления...")
         has_upd, msg = _check_updates()
         if has_upd:
-            kb = _kb([
-                [("⬇️ Установить", "adm:do_update")],
-                [("⬅️ Назад", "adm:menu")],
-            ])
-            await q.edit_message_text(f"🆕 {msg}", reply_markup=kb)
+            await q.edit_message_text(
+                f"🆕 {msg}",
+                reply_markup=_kb([[("⬇️ Установить", "adm:do_update")], _back()]),
+            )
         else:
             await q.edit_message_text(f"✅ {msg}", reply_markup=back_kb())
 
@@ -262,14 +379,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await asyncio.sleep(3)
             subprocess.Popen(["systemctl", "restart", "arxiv-bot"])
         else:
-            await q.edit_message_text(f"❌ Ошибка: <code>{err}</code>", reply_markup=back_kb(), parse_mode=ParseMode.HTML)
+            await q.edit_message_text(
+                f"❌ Ошибка: <code>{err}</code>",
+                reply_markup=back_kb(),
+                parse_mode=ParseMode.HTML,
+            )
 
     # ── Restart ───────────────────────────────────────────────────────────────
     elif data == "adm:restart":
-        kb = _kb([
-            [("✅ Да", "adm:do_restart"), ("❌ Отмена", "adm:menu")],
-        ])
-        await q.edit_message_text("♻️ Перезапустить бота?", reply_markup=kb)
+        await q.edit_message_text(
+            "♻️ Перезапустить бота?",
+            reply_markup=_kb([[("✅ Да", "adm:do_restart"), ("❌ Отмена", "adm:menu")]]),
+        )
 
     elif data == "adm:do_restart":
         await q.edit_message_text("♻️ Перезапускаюсь...")
@@ -280,10 +401,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ── Text handler (called from handlers.py) ────────────────────────────────────
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """
-    Handle text input during multi-step admin flows.
-    Returns True if message was consumed, False otherwise.
-    """
+    """Handle text input during multi-step flows. Returns True if consumed."""
     if not is_admin(update):
         return False
 
@@ -292,12 +410,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
         return False
 
     api_key = update.message.text.strip()
-
-    # Delete message containing the key for security
     try:
         await update.message.delete()
     except Exception:
         pass
+
+    uid = _uid(update)
 
     if awaiting == "key_only":
         cfg = load_config()
@@ -310,25 +428,25 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
         return True
 
     if awaiting == "key":
-        pkey = context.user_data.get("temp_provider")
-        pcfg = PROVIDERS[pkey]
+        pkey = context.user_data.get("temp_provider") or load_config().get("llm_provider", "")
         context.user_data["temp_key"] = api_key
-
-        status = await update.message.reply_text(f"⏳ Загружаю модели {pcfg['name']}...")
+        context.user_data.pop("awaiting", None)
+        pname = PROVIDERS.get(pkey, {}).get("name", pkey)
+        status = await update.message.reply_text(f"⏳ Загружаю модели {pname}...")
         try:
-            models = await fetch_models(pkey, pcfg.get("base_url"), api_key)
-            context.user_data["models"] = models
-            context.user_data.pop("awaiting", None)
+            models = await _fetch_models(pkey, PROVIDERS[pkey].get("base_url"), api_key)
+            _save_models(uid, models, context)
+            cfg = load_config()
             free_n = sum(1 for m in models if m["free"])
             await status.edit_text(
-                f"✅ {len(models)} моделей (✅ {free_n} бесплатных)\n\nВыберите модель:",
-                reply_markup=model_kb(models, 0),
+                f"Загружено {len(models)} моделей  (✅ {free_n} бесплатных)\n\nВыберите модель:",
+                reply_markup=model_kb(models, 0, cfg.get("llm_model", "")),
             )
         except Exception as e:
             context.user_data.clear()
             await status.edit_text(
                 f"❌ Не удалось загрузить модели: <code>{e}</code>\n\nПроверьте ключ.",
-                reply_markup=back_kb(),
+                reply_markup=back_kb("adm:provider"),
                 parse_mode=ParseMode.HTML,
             )
         return True
@@ -336,7 +454,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
     return False
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── System helpers ────────────────────────────────────────────────────────────
 
 def _get_logs(n: int = 30) -> str:
     try:
@@ -353,8 +471,12 @@ def _get_logs(n: int = 30) -> str:
 def _check_updates() -> tuple[bool, str]:
     try:
         subprocess.run(["git", "fetch", "origin", "--quiet"], cwd=WORKDIR, capture_output=True, timeout=15)
-        local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=WORKDIR, capture_output=True, text=True).stdout.strip()
-        remote = subprocess.run(["git", "rev-parse", "origin/main"], cwd=WORKDIR, capture_output=True, text=True).stdout.strip()
+        local = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=WORKDIR, capture_output=True, text=True
+        ).stdout.strip()
+        remote = subprocess.run(
+            ["git", "rev-parse", "origin/main"], cwd=WORKDIR, capture_output=True, text=True
+        ).stdout.strip()
         if local == remote:
             return False, f"Уже последняя версия ({local[:7]})"
         count = subprocess.run(
