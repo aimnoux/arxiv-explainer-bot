@@ -536,12 +536,29 @@ def run_wizard() -> None:
 
     cfg.setdefault("max_paper_pages", 20)
 
+    # ── Step 6: Admin Telegram ID ─────────────────────────────────────────────
+    header("Шаг 6: Telegram ID администратора")
+    current_admin = cfg.get("admin_user_id", "")
+    print("  Кто будет управлять ботом через /admin?")
+    print("  Узнать свой ID: напишите @userinfobot в Telegram.")
+    if current_admin:
+        print(f"  Текущий: {current_admin}")
+    raw = ask("Ваш Telegram User ID", str(current_admin) if current_admin else "").strip()
+    if raw.isdigit():
+        cfg["admin_user_id"] = int(raw)
+        print("  ✓ Установлен как администратор.")
+    elif current_admin:
+        print("  Оставлен текущий.")
+    else:
+        print("  ⚠ Не задан. Первый /start в боте автоматически станет администратором.")
+
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
     print(f"\n✅ Конфиг сохранён.")
     print(f"   {provider_cfg['name']} / {cfg['llm_model']}")
     print("   Запуск: python3 -m bot.main")
+    print("   Admin-панель: /admin в Telegram")
 
 
 if __name__ == "__main__":
