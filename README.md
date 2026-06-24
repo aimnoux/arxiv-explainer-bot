@@ -93,6 +93,8 @@ arxiv-bot
 
 После установки обновлений бот и сама панель перезапускаются автоматически.
 
+<img src="docs/screenshots/cli_panel.png" width="480" alt="CLI panel">
+
 ---
 
 ## Admin-панель в Telegram
@@ -128,7 +130,8 @@ arxiv-bot
 **Права доступа:**
 - Первый пользователь, отправивший `/start`, автоматически становится владельцем
 - Обычные пользователи видят только возможность отправлять ссылки
-- Для проверки своего Telegram ID: `/myid`
+
+<img src="docs/screenshots/admin_panel.png" width="320" alt="Admin panel"> <img src="docs/screenshots/provider_selection.png" width="320" alt="Provider selection"> <img src="docs/screenshots/model_selection.png" width="320" alt="Model selection">
 
 ---
 
