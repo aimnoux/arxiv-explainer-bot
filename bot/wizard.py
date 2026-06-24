@@ -99,31 +99,33 @@ def choose(options: list[str], prompt: str = "Выберите") -> int:
 
 
 # ── token validators ──────────────────────────────────────────────────────────
+# Return values: "ok" | "invalid" | "unreachable"
 
-def check_telegram_token(token: str) -> bool:
+def check_telegram_token(token: str) -> str:
     url = f"https://api.telegram.org/bot{token}/getMe"
     try:
         with urllib.request.urlopen(url, timeout=10) as r:
             data = json.loads(r.read())
-            return data.get("ok", False)
+            return "ok" if data.get("ok") else "invalid"
+    except urllib.error.HTTPError as e:
+        return "invalid" if e.code in (401, 403) else "unreachable"
     except Exception:
-        return False
+        return "unreachable"
 
 
-def check_openai_compatible(base_url: str, api_key: str) -> bool:
+def check_openai_compatible(base_url: str, api_key: str) -> str:
     url = base_url.rstrip("/") + "/models"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status == 200
+            return "ok" if r.status == 200 else "unreachable"
     except urllib.error.HTTPError as e:
-        # 401 means the endpoint exists but key is wrong
-        return e.code not in (401, 403)
+        return "invalid" if e.code in (401, 403) else "unreachable"
     except Exception:
-        return False
+        return "unreachable"
 
 
-def check_anthropic_key(api_key: str) -> bool:
+def check_anthropic_key(api_key: str) -> str:
     url = "https://api.anthropic.com/v1/models"
     req = urllib.request.Request(
         url,
@@ -131,11 +133,11 @@ def check_anthropic_key(api_key: str) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status == 200
+            return "ok" if r.status == 200 else "unreachable"
     except urllib.error.HTTPError as e:
-        return e.code not in (401, 403)
+        return "invalid" if e.code in (401, 403) else "unreachable"
     except Exception:
-        return False
+        return "unreachable"
 
 
 # ── wizard ────────────────────────────────────────────────────────────────────
@@ -161,11 +163,17 @@ def run_wizard() -> None:
     while True:
         token = ask("Введите токен бота (от @BotFather)", default_token)
         print("  Проверяю Telegram-токен...", end=" ", flush=True)
-        if check_telegram_token(token):
+        status = check_telegram_token(token)
+        if status == "ok":
             print("✓")
             cfg["telegram_token"] = token
             break
-        print("✗ Токен недействителен. Попробуйте ещё раз.")
+        elif status == "unreachable":
+            print("⚠ не удалось проверить (нет подключения к Telegram). Токен сохранён.")
+            cfg["telegram_token"] = token
+            break
+        else:
+            print("✗ Токен недействителен. Попробуйте ещё раз.")
 
     # ── Step 2: Provider ──────────────────────────────────────────────────────
     header("Шаг 2: Провайдер LLM")
@@ -207,14 +215,19 @@ def run_wizard() -> None:
         api_key = ask("Введите API-ключ", default_key)
         print("  Проверяю LLM API-ключ...", end=" ", flush=True)
         if provider_key == "anthropic":
-            ok = check_anthropic_key(api_key)
+            status = check_anthropic_key(api_key)
         else:
-            ok = check_openai_compatible(provider_cfg["base_url"], api_key)
-        if ok:
+            status = check_openai_compatible(provider_cfg["base_url"], api_key)
+        if status == "ok":
             print("✓")
             cfg["llm_api_key"] = api_key
             break
-        print("✗ Ключ недействителен или нет подключения. Попробуйте ещё раз.")
+        elif status == "unreachable":
+            print("⚠ не удалось проверить (нет подключения к провайдеру). Ключ сохранён.")
+            cfg["llm_api_key"] = api_key
+            break
+        else:
+            print("✗ Ключ отклонён (401/403). Проверьте ключ и попробуйте ещё раз.")
 
     # ── Step 5: Language ──────────────────────────────────────────────────────
     header("Шаг 5: Язык ответов")
