@@ -112,9 +112,30 @@ def menu_text() -> str:
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update):
+        uid = update.effective_user.id
+        try:
+            stored = load_config().get("admin_user_id", "не задан")
+        except Exception:
+            stored = "ошибка загрузки конфига"
+        await update.message.reply_text(
+            f"⛔ Нет доступа.\n\n"
+            f"Ваш Telegram ID: <code>{uid}</code>\n"
+            f"ID администратора в конфиге: <code>{stored}</code>\n\n"
+            f"Если это вы, обновите конфиг:\n"
+            f"<code>python3 -m bot.wizard</code>",
+            parse_mode=ParseMode.HTML,
+        )
         return
     context.user_data.clear()
     await update.message.reply_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
+
+
+async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    await update.message.reply_text(
+        f"🪪 Ваш Telegram ID: <code>{uid}</code>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 # ── Callback router ───────────────────────────────────────────────────────────
