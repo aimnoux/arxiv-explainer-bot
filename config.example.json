@@ -1,0 +1,8 @@
+{
+  "telegram_token": "YOUR_BOT_TOKEN",
+  "llm_provider": "gemini",
+  "llm_model": "gemini-2.0-flash",
+  "llm_api_key": "YOUR_API_KEY",
+  "max_paper_pages": 20,
+  "language": "ru"
+}

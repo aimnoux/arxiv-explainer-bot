@@ -1,0 +1,16 @@
+[Unit]
+Description=ArXiv Explainer Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=REPLACE_USER
+WorkingDirectory=REPLACE_WORKDIR
+ExecStart=REPLACE_WORKDIR/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
