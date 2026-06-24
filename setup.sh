@@ -22,11 +22,29 @@ echo ""
 # ── 2. System packages ────────────────────────────────────────────────────────
 echo "→ Обновляю apt и устанавливаю зависимости..."
 apt-get update -qq
-apt-get install -y -qq python3.11 python3.11-venv python3-pip git curl
+apt-get install -y -qq python3 python3-venv python3-pip git curl
 
-# ── 3. Virtual environment ────────────────────────────────────────────────────
+# ── 3. Detect Python ≥ 3.11 ──────────────────────────────────────────────────
+PYTHON=""
+for candidate in python3.13 python3.12 python3.11 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        ver=$("$candidate" -c 'import sys; print(sys.version_info >= (3,11))')
+        if [[ "$ver" == "True" ]]; then
+            PYTHON="$candidate"
+            break
+        fi
+    fi
+done
+
+if [[ -z "$PYTHON" ]]; then
+    echo "❌ Python 3.11+ не найден. Установите его вручную и запустите скрипт снова."
+    exit 1
+fi
+echo "   Используется: $PYTHON ($($PYTHON --version))"
+
+# ── 4. Virtual environment ────────────────────────────────────────────────────
 echo "→ Создаю виртуальное окружение..."
-python3.11 -m venv "$WORKDIR/.venv"
+"$PYTHON" -m venv "$WORKDIR/.venv"
 
 echo "→ Устанавливаю Python-зависимости..."
 "$WORKDIR/.venv/bin/pip" install --quiet --upgrade pip
