@@ -113,6 +113,18 @@ def do_install_updates() -> None:
         print(f"\n{BOLD}→ Обновляю зависимости...{RESET}")
         subprocess.run([str(pip), "install", "-q", "-r", str(WORKDIR / "requirements.txt")])
 
+    # Restart bot service so it picks up new code
+    was_running, _ = get_bot_status()
+    if was_running:
+        print(f"\n{BOLD}→ Перезапускаю сервис бота...{RESET}")
+        if _systemd_available():
+            subprocess.run(["systemctl", "restart", SERVICE_NAME])
+        elif PID_FILE.exists():
+            stop_bot()
+            time.sleep(1)
+            start_bot()
+        print(f"{GREEN}✓ Бот перезапущен с новым кодом.{RESET}")
+
     print(f"\n{GREEN}✅ Обновление завершено. Перезапускаю утилиту...{RESET}\n")
     time.sleep(1.5)
     os.chdir(str(WORKDIR))
