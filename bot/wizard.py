@@ -230,6 +230,40 @@ def _fetch_openai_compat(provider_key: str, base_url: str, api_key: str) -> list
     return result
 
 
+def fetch_openrouter_key_info(api_key: str) -> dict | None:
+    """Fetch /auth/key from OpenRouter. Returns None on any error."""
+    try:
+        return _http_get(
+            "https://openrouter.ai/api/v1/auth/key",
+            {"Authorization": f"Bearer {api_key}"},
+        ).get("data")
+    except Exception:
+        return None
+
+
+def print_openrouter_balance(api_key: str) -> None:
+    info = fetch_openrouter_key_info(api_key)
+    if not info:
+        return
+    usage = info.get("usage", 0)
+    limit = info.get("limit")
+    is_free = info.get("is_free_tier", False)
+    rate = info.get("rate_limit", {})
+
+    print("  ┌─ Аккаунт OpenRouter ───────────────────")
+    if is_free:
+        print("  │  Тариф:       бесплатный")
+    if limit is not None:
+        remaining = max(0.0, limit - usage)
+        print(f"  │  Потрачено:   ${usage:.4f}  /  лимит ${limit:.2f}")
+        print(f"  │  Остаток:     ${remaining:.4f}")
+    else:
+        print(f"  │  Потрачено:   ${usage:.4f}  (лимит не задан)")
+    if rate:
+        print(f"  │  Rate limit:  {rate.get('requests')} запросов / {rate.get('interval')}")
+    print("  └────────────────────────────────────────")
+
+
 def fetch_models(provider_key: str, provider_cfg: dict, api_key: str) -> list[dict]:
     """Fetch models from provider. Raises on failure — caller must handle."""
     if provider_key == "anthropic":
@@ -442,6 +476,8 @@ def run_wizard() -> None:
         if status == "ok":
             print("✓")
             cfg["llm_api_key"] = api_key
+            if provider_key == "openrouter":
+                print_openrouter_balance(api_key)
             break
         elif status == "unreachable":
             print("⚠ нет подключения к провайдеру. Сохраняю как есть.")
