@@ -174,7 +174,7 @@ def _draw(
 ) -> None:
     _clear()
     print(f"{BOLD}╔══════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}║     ArXiv Explainer Bot — CLI       ║{RESET}")
+    print(f"{BOLD}║     ArXiV Explainer Bot — CLI       ║{RESET}")
     print(f"{BOLD}╚══════════════════════════════════════╝{RESET}")
     print()
 
