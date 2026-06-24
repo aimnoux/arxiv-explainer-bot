@@ -70,14 +70,31 @@ if [[ "$INSTALL_SERVICE" =~ ^[Yy]$ ]]; then
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
     systemctl restart "$SERVICE_NAME"
-
-    echo ""
-    echo "✅ Сервис установлен и запущен."
-    echo "   Статус:    sudo systemctl status $SERVICE_NAME"
-    echo "   Логи:      sudo journalctl -u $SERVICE_NAME -f"
-    echo "   Перезапуск: sudo systemctl restart $SERVICE_NAME"
-else
-    echo ""
-    echo "✅ Установка завершена."
-    echo "   Запуск бота: $WORKDIR/.venv/bin/python -m bot.main"
 fi
+
+# ── 6. Global CLI command ─────────────────────────────────────────────────────
+echo "→ Устанавливаю команду 'arxiv-bot'..."
+cat > /usr/local/bin/arxiv-bot << EOF
+#!/bin/bash
+cd "$WORKDIR"
+exec "$WORKDIR/.venv/bin/python" -m bot.cli "\$@"
+EOF
+chmod +x /usr/local/bin/arxiv-bot
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════╗"
+echo "║          Установка завершена!        ║"
+echo "╚══════════════════════════════════════╝"
+echo ""
+echo "  Запустить панель управления:"
+echo "    arxiv-bot"
+echo ""
+if [[ "$INSTALL_SERVICE" =~ ^[Yy]$ ]]; then
+    echo "  Бот уже работает (systemd)."
+    echo "  Логи: sudo journalctl -u $SERVICE_NAME -f"
+fi
+echo ""
+
+# Launch CLI immediately
+exec sudo -u "$REAL_USER" /usr/local/bin/arxiv-bot
