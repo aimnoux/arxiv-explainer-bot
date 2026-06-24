@@ -87,11 +87,13 @@ def model_kb(models: list[dict], page: int, current_model: str = "") -> InlineKe
     end = min(start + PAGE, len(flat))
 
     rows = []
-    for m in flat[start:end]:
+    for abs_idx in range(start, end):
+        m = flat[abs_idx]
         badge = "✅" if m["free"] else "💰"
         mark = " ✓" if m["id"] == current_model else ""
         label = f"{badge} {m['name'][:35]}{mark}"
-        rows.append([(label, f"adm:model:{m['id']}")])
+        # Use numeric index — model IDs can exceed Telegram's 64-byte limit
+        rows.append([(label, f"adm:mi:{abs_idx}")])
 
     nav = []
     if page > 0:
@@ -311,9 +313,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await asyncio.sleep(1.5)
         await q.edit_message_text(menu_text(), reply_markup=main_menu_kb(), parse_mode=ParseMode.HTML)
 
-    # ── Model selected ────────────────────────────────────────────────────────
-    elif data.startswith("adm:model:"):
-        model_id = data[len("adm:model:"):]
+    # ── Model selected by index (avoids 64-byte callback_data limit) ─────────
+    elif data.startswith("adm:mi:"):
+        idx = int(data[len("adm:mi:"):])
+        models = _load_models(uid, context)
+        free = [m for m in models if m["free"]]
+        paid = [m for m in models if not m["free"]]
+        flat = free + paid
+        if not flat or idx >= len(flat):
+            await q.edit_message_text("⚠️ Список моделей устарел. Загрузите заново.", reply_markup=back_kb("adm:provider"))
+            return
+        model_id = flat[idx]["id"]
         if "temp_provider" in context.user_data:
             cfg["llm_provider"] = context.user_data["temp_provider"]
         if "temp_key" in context.user_data:
