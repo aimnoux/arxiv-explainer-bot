@@ -167,9 +167,9 @@ def _clear() -> None:
 
 def _draw(
     bot_running: bool,
-    updates_checked: bool,
-    updates_available: bool | None,
-    update_msg: str,
+    _uc: bool,
+    _ua: bool | None,
+    _um: str,
     last_action: str,
 ) -> None:
     _clear()
@@ -189,22 +189,13 @@ def _draw(
     print(f"  {BOLD}[1]{RESET} {toggle}")
     print(f"  {BOLD}[2]{RESET} Настроить (wizard)")
     print(f"  {BOLD}[3]{RESET} Показать логи")
-    print(f"  {BOLD}[4]{RESET} Проверить обновления")
-
-    if updates_checked and updates_available:
-        print(f"  {YELLOW}{BOLD}[5] ✨ Установить обновления        ← ДОСТУПНО{RESET}")
-    elif updates_checked and updates_available is False:
-        print(f"  {DIM}[5] Установить обновления  (нет обновлений){RESET}")
-    else:
-        print(f"  {DIM}[5] Установить обновления  (сначала [4]){RESET}")
-
+    print(f"  {BOLD}[4]{RESET} Проверить и установить обновления")
     print()
     print(f"  {BOLD}[0]{RESET} Выход")
     print()
 
-    if updates_checked and update_msg:
-        color = GREEN if updates_available is False else (YELLOW if updates_available else RED)
-        print(f"  {color}ℹ  {update_msg}{RESET}")
+    if last_action:
+        print(f"  {CYAN}»  {last_action}{RESET}")
         print()
 
     if last_action:
@@ -217,14 +208,11 @@ def _draw(
 def main() -> None:
     os.chdir(str(WORKDIR))
 
-    updates_checked = False
-    updates_available: bool | None = None
-    update_msg = ""
     last_action = ""
 
     while True:
         bot_running, _ = get_bot_status()
-        _draw(bot_running, updates_checked, updates_available, update_msg, last_action)
+        _draw(bot_running, False, None, "", last_action)
 
         try:
             choice = input("  Выберите действие: ").strip()
@@ -245,17 +233,13 @@ def main() -> None:
 
         elif choice == "4":
             last_action = "Проверяю обновления..."
-            _draw(bot_running, updates_checked, updates_available, update_msg, last_action)
-            updates_available, update_msg = fetch_updates()
-            updates_checked = True
-            last_action = update_msg
-
-        elif choice == "5":
-            if not updates_checked:
-                last_action = "Сначала проверьте обновления — [4]."
-            elif not updates_available:
-                last_action = "Обновлений нет."
+            _draw(bot_running, False, None, "", last_action)
+            has_updates, msg = fetch_updates()
+            if not has_updates:
+                last_action = f"✅ {msg}"
             else:
+                last_action = f"🆕 {msg}. Устанавливаю..."
+                _draw(bot_running, False, None, "", last_action)
                 do_install_updates()  # os.execv — не возвращается
 
         elif choice == "0":

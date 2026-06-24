@@ -46,7 +46,8 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [("⚙️ Провайдер / Модель", "adm:provider")],
         [("🔑 API-ключ", "adm:key_only"), ("🌍 Язык", "adm:lang")],
         [("📊 Статус", "adm:status"), ("📋 Логи", "adm:logs")],
-        [("🔄 Обновления", "adm:updates"), ("♻️ Перезапуск", "adm:restart")],
+        [("🔄 Проверить и установить обновления", "adm:updates")],
+        [("♻️ Перезапуск", "adm:restart")],
     ])
 
 
@@ -363,27 +364,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "adm:updates":
         await q.edit_message_text("🔄 Проверяю обновления...")
         has_upd, msg = _check_updates()
-        if has_upd:
-            await q.edit_message_text(
-                f"🆕 {msg}",
-                reply_markup=_kb([[("⬇️ Установить", "adm:do_update")], _back()]),
-            )
-        else:
+        if not has_upd:
             await q.edit_message_text(f"✅ {msg}", reply_markup=back_kb())
-
-    elif data == "adm:do_update":
-        await q.edit_message_text("⏳ Устанавливаю обновления...")
-        ok, err = _do_update()
-        if ok:
-            await q.edit_message_text("✅ Обновлено! Перезапускаюсь через 3 секунды...")
-            await asyncio.sleep(3)
-            subprocess.Popen(["systemctl", "restart", "arxiv-bot"])
         else:
-            await q.edit_message_text(
-                f"❌ Ошибка: <code>{err}</code>",
-                reply_markup=back_kb(),
-                parse_mode=ParseMode.HTML,
-            )
+            await q.edit_message_text(f"⏳ {msg}\n\nУстанавливаю...")
+            ok, err = _do_update()
+            if ok:
+                await q.edit_message_text("✅ Обновлено! Перезапускаюсь через 3 секунды...")
+                await asyncio.sleep(3)
+                subprocess.Popen(["systemctl", "restart", "arxiv-bot"])
+            else:
+                await q.edit_message_text(
+                    f"❌ Ошибка установки: <code>{err}</code>",
+                    reply_markup=back_kb(),
+                    parse_mode=ParseMode.HTML,
+                )
 
     # ── Restart ───────────────────────────────────────────────────────────────
     elif data == "adm:restart":
